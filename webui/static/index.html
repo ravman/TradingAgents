@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TradingAgents Control Center</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%233987e5%22/%3E%3Cpath d=%22M6 22l6-7 5 4 9-10%22 stroke=%22white%22 stroke-width=%223%22 fill=%22none%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+<script>try{const t=localStorage.getItem('ta-theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}</script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo"></span>TradingAgents <span class="muted" style="font-weight:400">Control Center</span></div>
+  <nav class="tabs" id="tabs">
+    <button data-view="live" class="active">Live</button>
+    <button data-view="portfolio">Portfolio &amp; Trades</button>
+    <button data-view="history">History</button>
+    <button data-view="backtest">Backtest</button>
+    <button data-view="settings">Settings</button>
+  </nav>
+  <div class="runbar">
+    <span class="status-pill" id="connPill"><span class="dot" id="connDot"></span><span id="connText">Connecting…</span></span>
+    <span class="status-pill" id="enginePill"><span class="dot" id="engDot"></span><span id="engText">Idle</span></span>
+    <span class="status-pill" id="providerPill" title="Provider · quick model · deep model">—</span>
+    <input type="text" id="runTickers" placeholder="Tickers e.g. NVDA, AAPL" style="width:170px" aria-label="Tickers">
+    <input type="date" id="runDate" aria-label="Analysis date">
+    <button class="btn primary" id="runBtn">▶ Run analysis</button>
+    <button class="btn danger" id="stopBtn" title="Cancel running and queued runs">■ Stop all</button>
+    <button class="btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </div>
+</header>
+
+<main>
+<!-- ============================ LIVE ============================ -->
+<section class="view active" id="view-live">
+  <div id="simBanner" class="banner" style="display:none">⚠ <span><b>Simulation mode.</b> The graph, tools and market data are real, but the agents' reasoning is scripted text. Ratings are not analysis — switch to a real LLM provider in Settings.</span></div>
+  <div class="live-grid">
+    <div class="col-left">
+      <div class="card">
+        <div class="card-h"><h3>Watchlist</h3><span class="spacer"></span><button class="btn small" id="runWatchBtn" title="Analyze every ticker in the watchlist">Run all</button></div>
+        <div id="watchlist"></div>
+        <div class="card-b row"><input type="text" id="wlAdd" placeholder="Add ticker" style="flex:1"><button class="btn small" id="wlAddBtn">Add</button></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Runs</h3><span class="spacer"></span><span class="muted" id="queueCount"></span></div>
+        <div id="queue" class="scroll" style="max-height:420px"></div>
+      </div>
+    </div>
+
+    <div class="col-mid">
+      <div class="card">
+        <div class="card-h">
+          <h3 id="chartTitle">Price</h3>
+          <span class="mono" id="chartQuote"></span>
+          <span class="spacer"></span>
+          <div class="seg" id="intervalSeg">
+            <button data-i="1m">1m</button><button data-i="5m">5m</button><button data-i="15m">15m</button><button data-i="1h">1H</button><button data-i="1d" class="active">1D</button><button data-i="1wk">1W</button>
+          </div>
+          <div class="seg" id="overlaySeg">
+            <button data-o="sma" class="active">SMA</button><button data-o="bb">BB</button><button data-o="marks" class="active">Decisions</button>
+          </div>
+        </div>
+        <div class="card-b" style="padding:6px 12px"><div class="chart-legend" id="priceLegend"></div></div>
+        <div class="chart-wrap"><div id="priceChart"></div><div class="chart-msg" id="priceMsg">Loading…</div></div>
+        <div class="card-h" style="border-top:1px solid var(--border)"><div class="seg" id="indSeg"><button data-p="rsi" class="active">RSI 14</button><button data-p="macd">MACD</button><button data-p="vol">Volume</button></div><span class="spacer"></span><span class="chart-legend" id="indLegend"></span></div>
+        <div id="indChart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Agent activity</h3><span class="muted" id="tlSub"></span><span class="spacer"></span>
+          <span class="chart-legend"><span><span class="sw" style="background:var(--team-analyst);height:8px"></span>Analysts</span><span><span class="sw" style="background:var(--team-research);height:8px"></span>Research</span><span><span class="sw" style="background:var(--team-trader);height:8px"></span>Trader</span><span><span class="sw" style="background:var(--team-risk);height:8px"></span>Risk &amp; PM</span><span>● tool call</span></span></div>
+        <div id="timeline"><div class="empty">Start a run to see each agent's activity, LLM calls and tool calls on a live timeline.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Reports &amp; reasoning</h3><span class="spacer"></span><div class="rtabs" id="rtabs"></div></div>
+        <div id="rbody"><div class="empty">Reports appear here as each agent finishes.</div></div>
+      </div>
+    </div>
+
+    <div class="col-right">
+      <div class="card">
+        <div class="card-h"><h3>Run</h3><span id="runHead" class="sec"></span><span class="spacer"></span><button class="btn small danger" id="cancelRunBtn" style="display:none">Cancel</button></div>
+        <div class="decision" id="decisionBox"><div class="muted">No run selected.</div></div>
+        <div class="tiles">
+          <div class="tile"><div class="l">Elapsed</div><div class="v" id="tElapsed">—</div></div>
+          <div class="tile"><div class="l">LLM calls</div><div class="v" id="tLlm">—</div></div>
+          <div class="tile"><div class="l">Tool calls</div><div class="v" id="tTools">—</div></div>
+          <div class="tile"><div class="l">Tokens in</div><div class="v" id="tIn">—</div></div>
+          <div class="tile"><div class="l">Tokens out</div><div class="v" id="tOut">—</div></div>
+          <div class="tile"><div class="l">Data pulled</div><div class="v" id="tData">—</div></div>
+        </div>
+        <div id="tokenChart"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Pipeline</h3></div>
+        <div id="pipeline"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Live feed</h3><span class="spacer"></span>
+          <div class="feed-filters seg" id="feedSeg"><button data-f="all" class="active">All</button><button data-f="reasoning">Reasoning</button><button data-f="tools">Tools &amp; data</button><button data-f="debate">Debate</button></div>
+          <label class="chk" style="margin:0"><input type="checkbox" id="autoScroll" checked>follow</label></div>
+        <div id="feed"><div class="empty">Waiting for events…</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PORTFOLIO ============================ -->
+<section class="view" id="view-portfolio">
+  <div class="banner">📄 <span><b>Paper trading only.</b> TradingAgents outputs ratings, not orders. This ledger simulates fills at the close on the analysis date using the sizing rule below. No broker is connected.</span></div>
+  <div class="card">
+    <div class="tiles four">
+      <div class="tile"><div class="l">Equity</div><div class="v" id="pEquity">—</div></div>
+      <div class="tile"><div class="l">Return</div><div class="v" id="pReturn">—</div></div>
+      <div class="tile"><div class="l">Cash</div><div class="v" id="pCash">—</div></div>
+      <div class="tile"><div class="l">Positions value</div><div class="v" id="pMV">—</div></div>
+    </div>
+  </div>
+  <div class="three" style="margin-top:12px">
+    <div>
+      <div class="card"><div class="card-h"><h3>Equity curve</h3></div><div class="chart-wrap"><div id="equityChart"></div><div class="chart-msg" id="equityMsg">No trades yet.</div></div></div>
+      <div class="card"><div class="card-h"><h3>Positions</h3></div><div class="scroll"><table class="data" id="posTable"></table></div></div>
+      <div class="card"><div class="card-h"><h3>Trade ledger</h3></div><div class="scroll"><table class="data" id="tradeTable"></table></div></div>
+    </div>
+    <div>
+      <div class="card"><div class="card-h"><h3>Execution rules</h3></div>
+        <div class="card-b form">
+          <label for="pAuto">Auto-execute decisions</label><label class="chk"><input type="checkbox" id="pAuto"> apply each rating to the ledger</label>
+          <label for="pAware">Portfolio-aware runs</label><label class="chk"><input type="checkbox" id="pAware"> pass holdings &amp; cash to the agents</label>
+          <label for="pMax">Max weight per ticker</label><div class="row"><input type="number" id="pMax" min="1" max="100" step="1" style="width:80px"> %</div>
+          <div class="full hint">Buy → target max weight · Overweight → half of max (adds only) · Hold → no change · Underweight → halve the position · Sell → close it.</div>
+          <div class="full row"><button class="btn primary" id="pSave">Save rules</button></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Manual paper order</h3></div>
+        <div class="card-b form">
+          <label>Ticker</label><input type="text" id="mTicker" placeholder="NVDA">
+          <label>Rating</label><select id="mRating"><option>Buy</option><option>Overweight</option><option>Hold</option><option>Underweight</option><option>Sell</option></select>
+          <div class="full row"><button class="btn" id="mApply">Apply at latest price</button></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Reset</h3></div>
+        <div class="card-b row"><input type="number" id="pResetCash" value="100000" style="width:130px"><button class="btn danger" id="pReset">Reset ledger</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ HISTORY ============================ -->
+<section class="view" id="view-history">
+  <div class="card"><div class="card-h"><h3>Runs</h3><span class="spacer"></span><input type="text" id="histFilter" placeholder="Filter ticker"></div>
+    <div class="scroll" style="max-height:440px"><table class="data" id="runTable"></table></div></div>
+  <div class="card"><div class="card-h"><h3>Decision log &amp; realised outcomes</h3><span class="muted hint" id="memPath"></span><span class="spacer"></span><button class="btn small" id="decRefresh">Refresh</button></div>
+    <div class="scroll" style="max-height:520px"><table class="data" id="decTable"></table></div></div>
+</section>
+
+<!-- ============================ BACKTEST ============================ -->
+<section class="view" id="view-backtest">
+  <div class="two">
+    <div class="card"><div class="card-h"><h3>New backtest</h3></div>
+      <div class="card-b form">
+        <label>Tickers</label><input type="text" id="btTickers" placeholder="NVDA, AAPL">
+        <label>Start date</label><input type="date" id="btStart">
+        <label>End date</label><input type="date" id="btEnd">
+        <label>Every N days</label><input type="number" id="btEvery" value="7" min="1" style="width:90px">
+        <div class="full hint">Runs the full pipeline on every ticker × date cell with the current Settings, into a separate decision log (your live log is untouched). Each cell is scored on realised alpha vs the regional benchmark once its holding window has traded. <b id="btEstimate"></b></div>
+        <div class="full row"><button class="btn primary" id="btRun">Start backtest</button></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-h"><h3>Result by rating</h3></div><div id="btChart" class="card-b"><div class="empty">Finish a backtest to see hit rate and mean alpha per rating.</div></div></div>
+  </div>
+  <div id="btList"></div>
+</section>
+
+<!-- ============================ SETTINGS ============================ -->
+<section class="view" id="view-settings">
+  <div class="two">
+    <div>
+      <div class="card"><div class="card-h"><h3>Model</h3></div>
+        <div class="card-b form">
+          <label for="sProvider">LLM provider</label><select id="sProvider"></select>
+          <label for="sQuick">Quick-think model</label><div class="row"><select id="sQuick" style="flex:1"></select><input type="text" id="sQuickCustom" placeholder="custom id" style="display:none;flex:1"></div>
+          <label for="sDeep">Deep-think model</label><div class="row"><select id="sDeep" style="flex:1"></select><input type="text" id="sDeepCustom" placeholder="custom id" style="display:none;flex:1"></div>
+          <label for="sUrl">Backend URL</label><input type="text" id="sUrl" placeholder="blank = provider default">
+          <label for="sEffort">Reasoning effort</label><select id="sEffort"><option value="">provider default</option><option>low</option><option>medium</option><option>high</option></select>
+          <label for="sTemp">Temperature</label><input type="number" id="sTemp" step="0.1" min="0" max="2" placeholder="provider default" style="width:140px">
+          <label for="sLang">Output language</label><input type="text" id="sLang">
+          <div class="full hint">Quick-think runs the analysts, researchers, trader and risk debaters; deep-think runs the Research Manager and Portfolio Manager.</div>
+        </div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Analysis</h3></div>
+        <div class="card-b form">
+          <label>Analysts</label><div id="sAnalysts"></div>
+          <label for="sDepth">Research depth</label><select id="sDepth"><option value="1">Shallow — 1 debate round</option><option value="3">Medium — 3 rounds</option><option value="5">Deep — 5 rounds</option></select>
+          <label for="sCkpt">Checkpoint resume</label><label class="chk"><input type="checkbox" id="sCkpt"> resume a crashed run from its last node</label>
+          <label for="sSimDelay">Simulation speed</label><div class="row"><input type="number" id="sSimDelay" step="0.1" min="0" style="width:90px"><span class="hint">seconds per simulated LLM call</span></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Data vendors</h3></div><div class="card-b form" id="sVendors"></div></div>
+    </div>
+    <div>
+      <div class="card"><div class="card-h"><h3>API keys</h3><span class="spacer"></span><span class="hint" id="envPath"></span></div>
+        <div class="card-b" id="keys"></div>
+        <div class="card-b hint" style="padding-top:0">Keys are written to your local <code>.env</code> and never leave this machine except to the provider you call.</div>
+      </div>
+      <div class="card"><div class="card-h"><h3>Watchlist &amp; schedule</h3></div>
+        <div class="card-b form">
+          <label for="sWatch">Watchlist</label><input type="text" id="sWatch">
+          <label for="sSchedOn">Daily auto-run</label><label class="chk"><input type="checkbox" id="sSchedOn"> analyze the watchlist every day</label>
+          <label for="sSchedTime">At (local time)</label><input type="time" id="sSchedTime" style="width:130px">
+          <label for="sSchedWk">Weekdays only</label><label class="chk"><input type="checkbox" id="sSchedWk"> skip Saturday &amp; Sunday</label>
+          <div class="full hint">The schedule runs while this server is running.</div>
+        </div>
+      </div>
+      <div class="card"><div class="card-b row"><button class="btn primary" id="sSave">Save settings</button><span class="hint" id="sSaved"></span></div></div>
+    </div>
+  </div>
+</section>
+</main>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
