@@ -28,7 +28,7 @@
     <span class="status-pill" id="connPill"><span class="dot" id="connDot"></span><span id="connText">Connecting…</span></span>
     <span class="status-pill" id="enginePill"><span class="dot" id="engDot"></span><span id="engText">Idle</span></span>
     <span class="status-pill" id="providerPill" title="Provider · quick model · deep model">—</span>
-    <input type="text" id="runTickers" placeholder="Tickers e.g. NVDA, AAPL" style="width:170px" aria-label="Tickers">
+    <input type="text" id="runTickers" placeholder="NSE/BSE e.g. RELIANCE, TCS.NS" style="width:170px" aria-label="Tickers">
     <input type="date" id="runDate" aria-label="Analysis date">
     <button class="btn primary" id="runBtn">▶ Run analysis</button>
     <button class="btn danger" id="stopBtn" title="Cancel running and queued runs">■ Stop all</button>
@@ -46,7 +46,7 @@
       <div class="card">
         <div class="card-h"><h3>Watchlist</h3><span class="spacer"></span><button class="btn small" id="runWatchBtn" title="Analyze every ticker in the watchlist">Run all</button></div>
         <div id="watchlist"></div>
-        <div class="card-b row"><input type="text" id="wlAdd" placeholder="Add ticker" style="flex:1"><button class="btn small" id="wlAddBtn">Add</button></div>
+        <div class="card-b row"><input type="text" id="wlAdd" placeholder="Add NSE/BSE symbol" style="flex:1"><button class="btn small" id="wlAddBtn">Add</button></div>
       </div>
       <div class="card">
         <div class="card-h"><h3>Runs</h3><span class="spacer"></span><span class="muted" id="queueCount"></span></div>
@@ -142,7 +142,7 @@
       </div>
       <div class="card"><div class="card-h"><h3>Manual paper order</h3></div>
         <div class="card-b form">
-          <label>Ticker</label><input type="text" id="mTicker" placeholder="NVDA">
+          <label>Ticker</label><input type="text" id="mTicker" placeholder="RELIANCE.NS">
           <label>Rating</label><select id="mRating"><option>Buy</option><option>Overweight</option><option>Hold</option><option>Underweight</option><option>Sell</option></select>
           <div class="full row"><button class="btn" id="mApply">Apply at latest price</button></div>
         </div>
@@ -167,7 +167,7 @@
   <div class="two">
     <div class="card"><div class="card-h"><h3>New backtest</h3></div>
       <div class="card-b form">
-        <label>Tickers</label><input type="text" id="btTickers" placeholder="NVDA, AAPL">
+        <label>Tickers</label><input type="text" id="btTickers" placeholder="RELIANCE.NS, TCS.NS">
         <label>Start date</label><input type="date" id="btStart">
         <label>End date</label><input type="date" id="btEnd">
         <label>Every N days</label><input type="number" id="btEvery" value="7" min="1" style="width:90px">

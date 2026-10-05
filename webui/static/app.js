@@ -44,7 +44,7 @@ const statusBadge = s => `<span class="badge st-${esc(s)}">${esc(s)}</span>`;
 // ------------------------------------------------------------------ state
 const S = {
   meta: null, settings: null, runs: {}, current: null, rs: {}, focus: null, follow: true,
-  ticker: 'NVDA', interval: '1d', overlays: new Set(['sma', 'marks']), indPane: 'rsi',
+  ticker: 'RELIANCE.NS', interval: '1d', overlays: new Set(['sma', 'marks']), indPane: 'rsi',
   quotes: {}, portfolio: null, feedFilter: 'all', reportTab: 'market_report', batches: {}, bars: [],
 };
 
@@ -485,7 +485,7 @@ async function startRuns(tickers, date) {
 async function loadPortfolio() { try { S.portfolio = await api('/api/portfolio'); renderPortfolio(); } catch (e) {} }
 function renderPortfolio() {
   const p = S.portfolio; if (!p) return;
-  const c = p.currency || 'USD';
+  const c = p.currency || 'INR';
   $('#pEquity').textContent = fmtN(p.equity, 2) + ' ' + c;
   $('#pReturn').innerHTML = `<span class="chg ${p.return_pct >= 0 ? 'up' : 'down'}">${p.return_pct >= 0 ? '+' : ''}${fmtN(p.return_pct, 2)}%</span>`;
   $('#pCash').textContent = fmtN(p.cash, 2); $('#pMV').textContent = fmtN(p.market_value, 2);

@@ -23,7 +23,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph import trading_graph
 from tradingagents.graph.trading_graph import TradingAgentsGraph, _validate_trade_date
 
-from . import simulation
+from . import market, simulation
 from .paper import PaperBook
 
 log = logging.getLogger("webui")
@@ -52,7 +52,7 @@ DEFAULT_SETTINGS = {
     "openai_reasoning_effort": "", "anthropic_effort": "", "google_thinking_level": "",
     "temperature": "", "checkpoint_enabled": False,
     "data_vendors": dict(DEFAULT_CONFIG["data_vendors"]),
-    "watchlist": ["NVDA", "AAPL", "MSFT", "SPY", "BTC-USD"],
+    "watchlist": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "^NSEI", "^BSESN"],
     "schedule": {"enabled": False, "time": "16:30", "weekdays_only": True, "last_fired": ""},
     "sim_delay": 0.6,
 }
@@ -263,7 +263,7 @@ class Engine:
     # ---- public API -----------------------------------------------------
     def submit(self, ticker: str, date: str | None = None, overrides: dict | None = None,
                batch_id: str | None = None) -> dict:
-        ticker = ticker.strip().upper()
+        ticker = market.require_listed(ticker)
         date = date or datetime.now().strftime("%Y-%m-%d")
         _validate_trade_date(date)
         s = {**self.settings, **(overrides or {})}

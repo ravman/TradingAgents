@@ -90,7 +90,12 @@ async def ws_endpoint(ws: WebSocket):
         while True:
             msg = json.loads(await ws.receive_text())
             if msg.get("type") == "subscribe":
-                meta["tickers"] = {t.upper() for t in msg.get("tickers", []) if t}
+                meta["tickers"] = set()
+                for t in msg.get("tickers", []):
+                    try:
+                        meta["tickers"].add(market.normalize_ticker(t, allow_index=True))
+                    except ValueError:
+                        pass
                 meta["interval"] = msg.get("interval", "1m")
     except WebSocketDisconnect:
         pass
@@ -174,6 +179,11 @@ def meta():
 @app.post("/api/settings")
 def update_settings(body: dict):
     s = engine.settings
+    if "watchlist" in body:
+        try:
+            body["watchlist"] = [market.normalize_ticker(t, allow_index=True) for t in body["watchlist"] if t.strip()]
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     for k, v in body.items():
         if k in eng.DEFAULT_SETTINGS:
             if isinstance(v, dict) and isinstance(s.get(k), dict):
@@ -272,7 +282,7 @@ class BacktestBody(BaseModel):
 @app.post("/api/backtest")
 def backtest(body: BacktestBody):
     try:
-        return engine.backtest([t.strip().upper() for t in body.tickers if t.strip()],
+        return engine.backtest([market.normalize_ticker(t) for t in body.tickers if t.strip()],
                                body.start, body.end, body.every, body.overrides)
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -287,7 +297,7 @@ def list_backtests():
 @app.get("/api/prices/{ticker}")
 def prices(ticker: str, interval: str = "1d", period: str | None = None):
     try:
-        return market.history(ticker, interval, period)
+        return market.history(market.normalize_ticker(ticker, allow_index=True), interval, period)
     except Exception as e:
         raise HTTPException(404, str(e))
 
@@ -297,7 +307,7 @@ def quotes(tickers: str):
     out = []
     for t in tickers.split(","):
         try:
-            out.append(market.quote(t.strip()))
+            out.append(market.quote(market.normalize_ticker(t, allow_index=True)))
         except Exception:
             out.append({"ticker": t.strip().upper(), "price": None})
     return out
@@ -327,8 +337,11 @@ class ManualTrade(BaseModel):
 @app.post("/api/portfolio/apply")
 def portfolio_apply(body: ManualTrade):
     from datetime import datetime
-    trade = engine.book.apply_rating(body.ticker, body.date or datetime.now().strftime("%Y-%m-%d"),
-                                     body.rating, "manual")
+    try:
+        trade = engine.book.apply_rating(body.ticker, body.date or datetime.now().strftime("%Y-%m-%d"),
+                                         body.rating, "manual")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     snap = engine.book.snapshot(live=False)
     hub.broadcast({"type": "trade", "trade": trade, "portfolio": snap, "run_id": None, "ts": time.time()})
     return {"trade": trade, "portfolio": snap}

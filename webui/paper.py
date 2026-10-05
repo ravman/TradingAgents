@@ -28,7 +28,7 @@ class PaperBook:
     def __init__(self, path: Path):
         self.path = path
         self._lock = threading.RLock()
-        self.data = {"starting_cash": 100000.0, "cash": 100000.0, "currency": "USD",
+        self.data = {"starting_cash": 1000000.0, "cash": 1000000.0, "currency": "INR",
                      "positions": {}, "trades": [], "equity": [],
                      "auto_execute": True, "max_weight": 0.10, "portfolio_aware": True}
         if path.exists():
@@ -106,7 +106,7 @@ class PaperBook:
 
     # ---- execution ------------------------------------------------------
     def apply_rating(self, ticker: str, date: str, rating: str, run_id: str) -> dict | None:
-        ticker = ticker.upper()
+        ticker = market.normalize_ticker(ticker)
         price = market.close_on(ticker, date)
         if not price:
             return None
@@ -115,8 +115,7 @@ class PaperBook:
             equity = self.snapshot(live=False)["equity"]
             cur_qty = pos["qty"]
             mw = float(self.data["max_weight"])
-            # Whole shares for stocks; fractional units for crypto (BTC-USD etc).
-            unit = 1e-4 if ticker.endswith("-USD") else 1.0
+            unit = 1.0  # NSE/BSE equities trade in whole shares
             fl = lambda x: round((x // unit) * unit, 6)
             target_qty = cur_qty
             if rating == "Buy":

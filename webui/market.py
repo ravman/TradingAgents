@@ -36,6 +36,33 @@ def _rsi(close: pd.Series, n: int = 14) -> pd.Series:
     return 100 - 100 / (1 + rs)
 
 
+INDICES = {"^NSEI": "Nifty 50", "^BSESN": "Sensex"}
+
+
+def normalize_ticker(t: str, allow_index: bool = False) -> str:
+    """NSE/BSE only: bare symbols default to NSE (.NS); .NS/.BO kept; indices only for charts/quotes."""
+    t = (t or "").strip().upper()
+    if allow_index and t in INDICES:
+        return t
+    if t.endswith((".NS", ".BO")) and len(t) > 3:
+        return t
+    if t and t.replace("-", "").replace("&", "").isalnum() and "." not in t and not t.startswith("^"):
+        return t + ".NS"
+    raise ValueError(f"'{t}': only NSE (.NS) and BSE (.BO) symbols are supported, e.g. RELIANCE.NS or RELIANCE.BO")
+
+
+def require_listed(t: str) -> str:
+    """normalize_ticker + confirm Yahoo has price data for it, so typos/non-Indian symbols fail before an LLM run is queued."""
+    t = normalize_ticker(t)
+    try:
+        ok = bool(history(t, "1d", "1mo")["bars"])
+    except Exception:
+        ok = False
+    if not ok:
+        raise ValueError(f"No NSE/BSE price data found for {t}. Check the symbol (BSE uses names, e.g. RELIANCE.BO).")
+    return t
+
+
 def history(ticker: str, interval: str = "1d", period: str | None = None) -> dict:
     interval = interval if interval in INTERVALS else "1d"
     period = period or INTERVALS[interval][0]
