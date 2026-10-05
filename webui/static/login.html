@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · TradingAgents</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1a1d21;--muted:#6b7280;--line:#d9dde3;--accent:#3987e5;--err:#c0392b}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--fg:#e6e9ee;--muted:#8b93a1;--line:#2a303a;--err:#ff7b6b}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
+form{width:min(360px,calc(100vw - 32px));background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px}
+h1{font-size:18px;margin:0 0 4px}p{margin:0 0 20px;color:var(--muted);font-size:13px}
+label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px}
+input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+button{width:100%;margin-top:20px;padding:10px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+#err{color:var(--err);font-size:13px;min-height:18px;margin-top:12px}
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>TradingAgents Control Center</h1>
+  <p>Sign in to continue.</p>
+  <label for="u">Username</label><input id="u" autocomplete="username" required autofocus>
+  <label for="p">Password</label><input id="p" type="password" autocomplete="current-password" required>
+  <button>Sign in</button>
+  <div id="err" role="alert"></div>
+</form>
+<script>
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const err = document.getElementById('err'); err.textContent = '';
+  const r = await fetch('/api/login', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({username: u.value, password: p.value})});
+  if (r.ok) location.href = '/'; else err.textContent = await r.text();
+});
+</script>
+</body>
+</html>

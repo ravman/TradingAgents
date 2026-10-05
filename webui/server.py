@@ -26,6 +26,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import get_model_options
 
+from . import auth
 from . import engine as eng
 from . import market
 
@@ -51,7 +52,8 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="TradingAgents Control Center", lifespan=lifespan)
+app = FastAPI(title="TradingAgents Control Center", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(auth.AuthMiddleware, static_dir=STATIC)
 
 
 # ---------------------------------------------------------------- websocket hub
@@ -351,6 +353,8 @@ def main():
     import uvicorn
     host = os.environ.get("WEBUI_HOST", "127.0.0.1")
     port = int(os.environ.get("WEBUI_PORT", "8765"))
+    if host not in ("127.0.0.1", "localhost", "::1") and not auth.enabled():
+        raise SystemExit("Refusing to bind a non-loopback address without a login: run `python -m webui.auth set-password`.")
     print(f"\n  TradingAgents Control Center → http://{host}:{port}\n")
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
