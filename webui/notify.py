@@ -84,7 +84,10 @@ def send_digest(engine, batch):
         engine._sched_log("Digest saved but not emailed: set SMTP_HOST, SMTP_USER, SMTP_PASSWORD and DIGEST_TO in Settings")
         return
     msg = EmailMessage()
-    msg["Subject"], msg["From"], msg["To"] = subject, os.environ.get("SMTP_FROM") or user, to
+    sender = os.environ.get("SMTP_FROM") or user
+    if "@" not in sender:  # a bare display name: pair it with the login address
+        sender = f"{sender} <{user}>"
+    msg["Subject"], msg["From"], msg["To"] = subject, sender, to
     msg.set_content(text)
     msg.add_alternative(f"<html><body>{page}</body></html>", subtype="html")
     port = int(os.environ.get("SMTP_PORT") or 587)
