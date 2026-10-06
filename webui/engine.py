@@ -588,7 +588,7 @@ class Engine:
                                         analysts=["market", "social", "news", "fundamentals"], label="Nightly full analysis")
                 if sch.get("weekdays_only", True) and now.weekday() >= 5:
                     continue
-                times = sorted(sch.get("times") or ["09:25", "12:20", "15:15"])
+                times = sorted(sch["times"] if "times" in sch else ["09:25", "12:20", "15:15"])  # [] = intraday off
                 for idx, slot in enumerate(times):
                     start = datetime.strptime(f"{today} {slot}", "%Y-%m-%d %H:%M")
                     # fire within 30 min of the slot; a missed slot (server down) is skipped, not run late
