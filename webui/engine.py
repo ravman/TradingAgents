@@ -56,7 +56,8 @@ DEFAULT_SETTINGS = {
     "schedule": {"enabled": False, "times": ["09:25", "12:20", "15:15"], "weekdays_only": True,
                  "analysts": ["market", "social"], "first_slot_news": True, "intraday_top": 10, "last_fired": {},
                  "weekly_full": {"enabled": False, "day": 5, "time": "10:00"},
-                 "nightly_full": {"enabled": True, "time": "18:00"}},
+                 "nightly_full": {"enabled": True, "time": "18:00"},
+                 "portfolio_digest": {"enabled": True, "time": "16:00"}},
     "sim_delay": 0.6,
 }
 
@@ -578,6 +579,17 @@ class Engine:
                         last_trading = now - timedelta(days=max(0, now.weekday() - 4))  # Sat/Sun -> Friday
                         self._fire_slot("weekly", last_trading.strftime("%Y-%m-%d"), False, sch,
                                         analysts=["market", "social", "news", "fundamentals"], label="Weekly full analysis")
+                pd = sch.get("portfolio_digest") or {}
+                if pd.get("enabled") and now.weekday() < 5 and fired.get("portfolio") != today:
+                    start = datetime.strptime(f"{today} {pd.get('time', '16:00')}", "%Y-%m-%d %H:%M")
+                    if start <= now < start + timedelta(minutes=60):
+                        fired["portfolio"] = today
+                        save_settings(self.settings)
+                        try:
+                            from . import notify
+                            notify.send_portfolio(self)
+                        except Exception:
+                            log.exception("portfolio digest")
                 nf = sch.get("nightly_full") or {}
                 if nf.get("enabled") and now.weekday() < 5 and fired.get("nightly") != today:
                     start = datetime.strptime(f"{today} {nf.get('time', '18:00')}", "%Y-%m-%d %H:%M")
