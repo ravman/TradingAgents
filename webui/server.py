@@ -26,7 +26,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import get_model_options
 
-from . import auth
+from . import auth, screener
 from . import engine as eng
 from . import market
 
@@ -46,6 +46,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(_app):
     global engine
+    screener.register()
     hub.loop = asyncio.get_running_loop()
     engine = eng.Engine(hub.broadcast)
     threading.Thread(target=_price_poller, daemon=True, name="prices").start()

@@ -51,7 +51,7 @@ DEFAULT_SETTINGS = {
     "analysts": ["market", "social", "news", "fundamentals"],
     "openai_reasoning_effort": "", "anthropic_effort": "", "google_thinking_level": "",
     "temperature": "", "checkpoint_enabled": False,
-    "data_vendors": dict(DEFAULT_CONFIG["data_vendors"]),
+    "data_vendors": {**DEFAULT_CONFIG["data_vendors"], "fundamental_data": "screener,yfinance"},
     "watchlist": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "^NSEI", "^BSESN"],
     "schedule": {"enabled": False, "time": "16:30", "weekdays_only": True, "last_fired": ""},
     "sim_delay": 0.6,
