@@ -583,7 +583,7 @@ function renderSettings() {
   $('#sVendors').innerHTML = Object.entries(m.vendor_options).map(([k, opts]) => `<label>${k.replace(/_/g, ' ')}</label><select data-v="${k}">${[...new Set([s.data_vendors[k], ...opts])].map(o => `<option ${o === s.data_vendors[k] ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`).join('') +
     '<div class="full hint">Comma = ordered fallback. Alpha Vantage needs ALPHA_VANTAGE_API_KEY; FRED needs FRED_API_KEY (macro is optional); SEC EDGAR gives point-in-time US filings.</div>';
   $('#sWatch').value = s.watchlist.join(', ');
-  $('#sSchedOn').checked = !!s.schedule.enabled; $('#sSchedTime').value = s.schedule.time; $('#sSchedWk').checked = s.schedule.weekdays_only !== false;
+  $('#sSchedOn').checked = !!s.schedule.enabled; $('#sSchedTimes').value = (s.schedule.times || []).join(', '); $('#sSchedNews').checked = s.schedule.first_slot_news !== false; $('#sWeekly').checked = !!(s.schedule.weekly_full || {}).enabled; $('#sSchedWk').checked = s.schedule.weekdays_only !== false;
   $('#envPath').textContent = m.env_path; $('#memPath').textContent = m.memory_log;
   renderKeys();
 }
@@ -620,7 +620,7 @@ $('#sSave').onclick = async () => {
     analysts: $$('#sAnalysts input:checked').map(i => i.value), research_depth: +$('#sDepth').value, checkpoint_enabled: $('#sCkpt').checked,
     sim_delay: +$('#sSimDelay').value || 0, data_vendors: Object.fromEntries($$('#sVendors select').map(s => [s.dataset.v, s.value])),
     watchlist: $('#sWatch').value.split(',').map(t => t.trim().toUpperCase()).filter(Boolean),
-    schedule: { enabled: $('#sSchedOn').checked, time: $('#sSchedTime').value || '16:30', weekdays_only: $('#sSchedWk').checked },
+    schedule: { ...(S.settings.schedule || {}), enabled: $('#sSchedOn').checked, times: $('#sSchedTimes').value.split(',').map(t => t.trim()).filter(t => /^\d\d:\d\d$/.test(t)), first_slot_news: $('#sSchedNews').checked, weekly_full: { ...((S.settings.schedule || {}).weekly_full || {}), enabled: $('#sWeekly').checked }, weekdays_only: $('#sSchedWk').checked },
   };
   if (!body.analysts.length) { toast('Pick at least one analyst.'); return; }
   if (!body.quick_think_llm || !body.deep_think_llm) { toast('Enter a model id.'); return; }

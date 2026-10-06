@@ -11,7 +11,7 @@ import threading
 import time
 import traceback
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -53,7 +53,10 @@ DEFAULT_SETTINGS = {
     "temperature": "", "checkpoint_enabled": False,
     "data_vendors": {**DEFAULT_CONFIG["data_vendors"], "fundamental_data": "screener,yfinance"},
     "watchlist": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "^NSEI", "^BSESN"],
-    "schedule": {"enabled": False, "time": "16:30", "weekdays_only": True, "last_fired": ""},
+    "schedule": {"enabled": False, "times": ["09:25", "12:20", "15:15"], "weekdays_only": True,
+                 "analysts": ["market", "social"], "first_slot_news": True, "intraday_top": 10, "last_fired": {},
+                 "weekly_full": {"enabled": False, "day": 5, "time": "10:00"},
+                 "nightly_full": {"enabled": True, "time": "18:00"}},
     "sim_delay": 0.6,
 }
 
@@ -494,6 +497,16 @@ class Engine:
         if view["done"] < view["total"]:
             self.broadcast({"type": "batch", "batch": view})
             return
+        if b.get("kind") == "slot":
+            b["status"] = "done"
+            self._save_batches()
+            try:
+                from . import notify
+                notify.send_digest(self, b)
+            except Exception:
+                log.exception("digest")
+            self.broadcast({"type": "batch", "batch": self._batch_view(b)})
+            return
         b["status"] = "settling"
         self.broadcast({"type": "batch", "batch": self._batch_view(b)})
         try:
@@ -516,6 +529,34 @@ class Engine:
         self.broadcast({"type": "batch", "batch": self._batch_view(b)})
 
     # ---- scheduler ------------------------------------------------------
+    def _fire_slot(self, slot, today, first, sch, analysts=None, label=None):
+        full = analysts is not None
+        busy = [b for b in self.batches.values() if b.get("kind") == "slot" and b["status"] == "running"]
+        if busy or self.current:
+            self._sched_log(f"Slot {slot} skipped: the previous batch is still running")
+            return
+        analysts = list(analysts or sch.get("analysts") or ["market", "social"])
+        if first and sch.get("first_slot_news", True) and "news" not in analysts:
+            analysts.append("news")
+        tickers = [t for t in self.settings.get("watchlist", []) if not t.startswith("^")]
+        if not full and sch.get("intraday_top"):
+            tickers = tickers[:int(sch["intraday_top"])]  # watchlist is ordered best-first
+        bid = f"slot_{today}_{slot.replace(':', '')}"
+        batch = {"id": bid, "kind": "slot", "slot": slot, "label": label or f"Intraday {slot}", "analysts": analysts, "tickers": tickers, "dates": [today], "log_path": "",
+                 "overrides": {}, "run_ids": [], "status": "running", "summary": None, "created": time.time()}
+        self.batches[bid] = batch
+        for t in tickers:
+            try:
+                batch["run_ids"].append(self.submit(t, today, {"analysts": analysts}, batch_id=bid)["id"])
+            except ValueError as e:
+                log.warning("slot %s: skipped %s (%s)", slot, t, e)
+        self._save_batches()
+        self._sched_log(f"Scheduled slot {slot}: {len(batch['run_ids'])} stocks, analysts={', '.join(analysts)}")
+
+    def _sched_log(self, text):
+        log.info(text)
+        self.broadcast({"type": "log", "level": "info", "run_id": None, "ts": time.time(), "text": text})
+
     def _scheduler(self):
         while True:
             time.sleep(20)
@@ -524,16 +565,37 @@ class Engine:
                 if not sch.get("enabled"):
                     continue
                 now = datetime.now()
+                today = now.strftime("%Y-%m-%d")
+                fired = sch.get("last_fired")
+                if not isinstance(fired, dict):
+                    fired = sch["last_fired"] = {}
+                wk = sch.get("weekly_full") or {}
+                if wk.get("enabled") and now.weekday() == int(wk.get("day", 5)) and fired.get("weekly") != today:
+                    start = datetime.strptime(f"{today} {wk.get('time', '10:00')}", "%Y-%m-%d %H:%M")
+                    if start <= now < start + timedelta(minutes=30):
+                        fired["weekly"] = today
+                        save_settings(self.settings)
+                        last_trading = now - timedelta(days=max(0, now.weekday() - 4))  # Sat/Sun -> Friday
+                        self._fire_slot("weekly", last_trading.strftime("%Y-%m-%d"), False, sch,
+                                        analysts=["market", "social", "news", "fundamentals"], label="Weekly full analysis")
+                nf = sch.get("nightly_full") or {}
+                if nf.get("enabled") and now.weekday() < 5 and fired.get("nightly") != today:
+                    start = datetime.strptime(f"{today} {nf.get('time', '18:00')}", "%Y-%m-%d %H:%M")
+                    if start <= now < start + timedelta(minutes=30):
+                        fired["nightly"] = today
+                        save_settings(self.settings)
+                        self._fire_slot("nightly", today, False, sch,
+                                        analysts=["market", "social", "news", "fundamentals"], label="Nightly full analysis")
                 if sch.get("weekdays_only", True) and now.weekday() >= 5:
                     continue
-                today = now.strftime("%Y-%m-%d")
-                if sch.get("last_fired") == today or now.strftime("%H:%M") < sch.get("time", "16:30"):
-                    continue
-                sch["last_fired"] = today
-                save_settings(self.settings)
-                for t in self.settings.get("watchlist", []):
-                    self.submit(t, today)
-                self.broadcast({"type": "log", "level": "info", "run_id": None, "ts": time.time(),
-                                "text": f"Scheduled run fired for {len(self.settings.get('watchlist', []))} tickers"})
+                times = sorted(sch.get("times") or ["09:25", "12:20", "15:15"])
+                for idx, slot in enumerate(times):
+                    start = datetime.strptime(f"{today} {slot}", "%Y-%m-%d %H:%M")
+                    # fire within 30 min of the slot; a missed slot (server down) is skipped, not run late
+                    if fired.get(slot) == today or not (start <= now < start + timedelta(minutes=30)):
+                        continue
+                    fired[slot] = today
+                    save_settings(self.settings)
+                    self._fire_slot(slot, today, idx == 0, sch)
             except Exception:
                 log.exception("scheduler")

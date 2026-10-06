@@ -214,8 +214,10 @@
       <div class="card"><div class="card-h"><h3>Watchlist &amp; schedule</h3></div>
         <div class="card-b form">
           <label for="sWatch">Watchlist</label><input type="text" id="sWatch">
-          <label for="sSchedOn">Daily auto-run</label><label class="chk"><input type="checkbox" id="sSchedOn"> analyze the watchlist every day</label>
-          <label for="sSchedTime">At (local time)</label><input type="time" id="sSchedTime" style="width:130px">
+          <label for="sSchedOn">Daily auto-run</label><label class="chk"><input type="checkbox" id="sSchedOn"> quick runs (Market + Sentiment) on the watchlist; email a buy/sell digest after each</label>
+          <label for="sSchedTimes">Intraday times (IST)</label><input type="text" id="sSchedTimes" placeholder="09:25, 12:20, 15:15" style="width:220px">
+          <label for="sSchedNews">News at first slot</label><label class="chk"><input type="checkbox" id="sSchedNews"> add the News analyst to the first run of the day</label>
+          <label for="sWeekly">Weekly full analysis</label><label class="chk"><input type="checkbox" id="sWeekly"> all analysts, Saturday 10:00</label>
           <label for="sSchedWk">Weekdays only</label><label class="chk"><input type="checkbox" id="sSchedWk"> skip Saturday &amp; Sunday</label>
           <div class="full hint">The schedule runs while this server is running.</div>
         </div>

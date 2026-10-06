@@ -38,7 +38,8 @@ STATIC = Path(__file__).resolve().parent / "static"
 ENV_PATH = Path(find_dotenv(usecwd=True) or (ROOT / ".env"))
 
 EXTRA_KEYS = ["FRED_API_KEY", "ALPHA_VANTAGE_API_KEY", "TYPESAFE_API_KEY", "SEC_EDGAR_USER_AGENT",
-              "OLLAMA_BASE_URL", "AZURE_OPENAI_API_KEY"]
+              "OLLAMA_BASE_URL", "AZURE_OPENAI_API_KEY",
+              "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "DIGEST_TO"]
 
 from contextlib import asynccontextmanager
 
