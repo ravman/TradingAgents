@@ -9,6 +9,7 @@ from __future__ import annotations
 import html
 import logging
 import os
+import re
 import smtplib
 import ssl
 from datetime import datetime
@@ -30,6 +31,7 @@ def _prev_signal(engine, run) -> str | None:
 
 def _gist(text: str, n=260) -> str:
     t = " ".join((text or "").replace("#", " ").replace("*", " ").split())
+    t = re.sub(r"^Rating\s*:\s*\w+\s*(Executive Summary\s*:\s*)?", "", t)  # the rating is already in the line
     return t[:n] + ("…" if len(t) > n else "")
 
 
@@ -47,7 +49,8 @@ def build(engine, batch) -> tuple[str, str, str]:
                      "trade": r.get("trade"), "gist": _gist(r.get("decision", ""))})
     act = [x for x in rows if x["status"] == "act"]
     buys = [x for x in act if x["sig"] in BUY]
-    sells = [x for x in act if x["sig"] in SELL]
+    sells = [x for x in act if x["sig"] in SELL and x["held"]]
+    avoid = [x for x in act if x["sig"] in SELL and not x["held"]]  # sell-side rating on a stock you don't own
     to_hold = [x for x in act if x["sig"] not in BUY + SELL]
     pending = [x for x in rows if x["status"] == "pending"]
     same = [x for x in rows if x["status"] == "same"]
@@ -77,6 +80,8 @@ def build(engine, batch) -> tuple[str, str, str]:
             + "\nA change is acted on only if it moves 2+ steps or is confirmed by a second run.\n\n"
             + block("BUY / ADD (acted on)", sorted(buys, key=lambda x: x["sig"] != "Buy"))
             + "\n" + block("SELL / TRIM (acted on)", sorted(sells, key=lambda x: x["sig"] != "Sell"))
+            + ("\n" + block("AVOID (sell-side rating, you hold none - nothing to sell)", avoid,
+                              lambda x: f"{x['t']}: {x['sig']} - {x['gist']}") if avoid else "")
             + ("\n" + block("MOVED TO HOLD", to_hold) if to_hold else "")
             + "\n" + block("UNCONFIRMED (seen once - will re-check next run, no trade)", pending,
                            lambda x: f"{x['t']}: {x['sig']} (confirmed: {x['before'] or 'none'}) - {x['gist']}")
