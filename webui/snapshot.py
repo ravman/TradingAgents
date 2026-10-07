@@ -82,6 +82,10 @@ def select(engine, tickers: list[str], cfg: dict | None = None):
         rec = snap.get(t, {})
         rec.update(m, quarter=q, updated=time.time())
         reasons = []
+        from . import confirm
+        pend = confirm.pending().get(t)
+        if pend:
+            reasons.append(f"rating change to {pend['rating']} awaiting confirmation")
         if t in held:
             reasons.append("held position")
         if prior is None:

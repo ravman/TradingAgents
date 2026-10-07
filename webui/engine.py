@@ -60,6 +60,7 @@ DEFAULT_SETTINGS = {
                  "nightly_full": {"enabled": True, "time": "18:00"},
                  "portfolio_digest": {"enabled": True, "time": "16:00"},
                  "change_detection": True, "fundamentals_cache": True,
+                 "confirm_rule": {"enabled": True, "immediate_steps": 2, "pending_days": 7},
                  "nightly_analysts": ["market", "news", "fundamentals"],
                  "change_thresholds": {"move_pct": 3.0, "vol_ratio": 2.0, "max_age_days": 5}},
     "sim_delay": 0.6,
@@ -258,7 +259,7 @@ class Engine:
     def summary(self, run: dict) -> dict:
         return {k: run.get(k) for k in ("id", "ticker", "date", "status", "signal", "created", "started",
                                         "finished", "error", "provider", "models", "batch_id", "stats",
-                                        "trade", "analysts", "simulated")}
+                                        "trade", "analysts", "simulated", "confirm")}
 
     # ---- events ---------------------------------------------------------
     def _emit(self, run: dict, ev: dict):
@@ -440,7 +441,19 @@ class Engine:
                              "text": run["decision"], "review": is_review(signal)})
             if (self.book.data.get("auto_execute") and not run["overrides"].get("_no_paper")
                     and not is_review(signal)):
-                trade = self.book.apply_rating(run["ticker"], run["date"], signal, run["id"])
+                from . import confirm
+                rule = {**confirm.DEFAULTS, **((self.settings.get("schedule") or {}).get("confirm_rule") or {})}
+                batch = self.batches.get(run.get("batch_id") or "")
+                if batch and batch.get("kind") == "slot" and rule.get("enabled"):
+                    verdict = confirm.evaluate(run["ticker"], signal, run["date"], rule)
+                    run["confirm"] = verdict
+                    self._emit(run, {"type": "log", "level": "info",
+                                     "text": f"Rating rule: {verdict['status'].upper()} - {verdict['why']}"})
+                    act = verdict["status"] == "act"
+                else:
+                    confirm.force(run["ticker"], signal)  # manual runs trade at once and set the baseline
+                    act = True
+                trade = self.book.apply_rating(run["ticker"], run["date"], signal, run["id"]) if act else None
                 if trade:
                     run["trade"] = trade
                     self._emit(run, {"type": "trade", "trade": trade, "portfolio": self.book.snapshot(False)})
