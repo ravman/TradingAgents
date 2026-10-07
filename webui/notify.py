@@ -48,7 +48,7 @@ def build(engine, batch) -> tuple[str, str, str]:
     sells = [x for x in rows if x["sig"] in SELL]
     holds = [x for x in rows if x["sig"] not in BUY + SELL]
     label = batch.get("label") or f"Slot {batch.get('slot')}"
-    subject = (f"[{label}] {len(buys)} buy · {len(sells)} sell · {len(holds)} hold"
+    subject = (f"[{label}]{' ABORTED' if batch.get('aborted') else ''} {len(buys)} buy · {len(sells)} sell · {len(holds)} hold"
                f" · {datetime.now().strftime('%d %b %H:%M')}")
 
     def line(x):
@@ -61,12 +61,21 @@ def build(engine, batch) -> tuple[str, str, str]:
     def block(title, xs):
         return f"{title} ({len(xs)})\n" + ("\n".join(line(x) for x in xs) if xs else "  none") + "\n"
 
-    text = (f"{label} · analysts: {', '.join(batch.get('analysts', []))}\n"
+    carried, reasons = batch.get("carried") or {}, batch.get("reasons") or {}
+    n_watch = len(runs) + len(carried)
+    head = ""
+    if batch.get("aborted"):
+        head = f"*** BATCH ABORTED: {batch['aborted']}. {len([r for r in runs if r['status'] != 'done'])} stocks were not analysed. ***\n"
+    if carried:
+        head += f"{len(carried)} of {n_watch} stocks unchanged since their last analysis (rating carried forward, no cost).\n"
+    text = (head + f"{label} · analysts: {', '.join(batch.get('analysts', []))}\n"
             f"{len(done)} of {len(runs)} stocks analysed" + (f", {len(failed)} failed" if failed else "") + "\n\n"
             + block("BUY / ADD", sorted(buys, key=lambda x: x["sig"] != "Buy"))
             + "\n" + block("SELL / TRIM", sorted(sells, key=lambda x: x["sig"] != "Sell"))
             + "\nRating changes: " + (", ".join(f"{x['t']} {x['prev']}→{x['sig']}" for x in rows if x["changed"]) or "none")
             + "\nHold: " + (", ".join(x["t"] for x in holds) or "none")
+            + ("\n\nWhy these were re-analysed:\n" + "\n".join(f"  {t}: {why}" for t, why in reasons.items()) if reasons else "")
+            + ("\n\nUnchanged (last rating carried forward): " + ", ".join(f"{t} {v['signal']} ({v['date']})" for t, v in carried.items()) if carried else "")
             + ("\nFailed: " + ", ".join(r["ticker"] for r in failed) if failed else "")
             + "\n\nAI-generated research on a simulated paper book. Not financial advice; verify before trading.\n")
     page = f"<pre style='font:14px/1.5 ui-monospace,monospace;white-space:pre-wrap'>{html.escape(text)}</pre>"

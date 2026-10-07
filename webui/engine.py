@@ -57,7 +57,9 @@ DEFAULT_SETTINGS = {
                  "analysts": ["market", "social"], "first_slot_news": True, "intraday_top": 10, "last_fired": {},
                  "weekly_full": {"enabled": False, "day": 5, "time": "10:00"},
                  "nightly_full": {"enabled": True, "time": "18:00"},
-                 "portfolio_digest": {"enabled": True, "time": "16:00"}},
+                 "portfolio_digest": {"enabled": True, "time": "16:00"},
+                 "change_detection": True,
+                 "change_thresholds": {"move_pct": 3.0, "vol_ratio": 2.0, "max_age_days": 5}},
     "sim_delay": 0.6,
 }
 
@@ -494,6 +496,14 @@ class Engine:
         b = self.batches.get(bid)
         if not b:
             return
+        if b.get("kind") == "slot" and not b.get("aborted"):
+            runs = [self.runs[r] for r in b["run_ids"] if r in self.runs]
+            if sum(r["status"] == "failed" and "credit balance" in (r.get("error") or "") for r in runs) >= 3:
+                b["aborted"] = "Anthropic credit balance too low"
+                for r in runs:
+                    if r["status"] == "queued":
+                        self.cancel(r["id"])
+                self._sched_log("Batch aborted: Anthropic credit balance too low. Add credit and re-run.")
         view = self._batch_view(b)
         if view["done"] < view["total"]:
             self.broadcast({"type": "batch", "batch": view})
@@ -542,9 +552,18 @@ class Engine:
         tickers = [t for t in self.settings.get("watchlist", []) if not t.startswith("^")]
         if not full and sch.get("intraday_top"):
             tickers = tickers[:int(sch["intraday_top"])]  # watchlist is ordered best-first
+        reasons, carried = {}, {}
+        if slot == "nightly" and sch.get("change_detection", True):
+            from . import snapshot
+            try:
+                reasons, carried = snapshot.select(self, tickers, sch.get("change_thresholds"))
+                tickers = [t for t in tickers if t in reasons]
+            except Exception:
+                log.exception("change detection failed; running every stock")
         bid = f"slot_{today}_{slot.replace(':', '')}"
         batch = {"id": bid, "kind": "slot", "slot": slot, "label": label or f"Intraday {slot}", "analysts": analysts, "tickers": tickers, "dates": [today], "log_path": "",
-                 "overrides": {}, "run_ids": [], "status": "running", "summary": None, "created": time.time()}
+                 "overrides": {}, "run_ids": [], "status": "running", "summary": None, "created": time.time(),
+                 "reasons": reasons, "carried": carried}
         self.batches[bid] = batch
         for t in tickers:
             try:
@@ -552,7 +571,11 @@ class Engine:
             except ValueError as e:
                 log.warning("slot %s: skipped %s (%s)", slot, t, e)
         self._save_batches()
-        self._sched_log(f"Scheduled slot {slot}: {len(batch['run_ids'])} stocks, analysts={', '.join(analysts)}")
+        self._sched_log(f"Scheduled slot {slot}: {len(batch['run_ids'])} stocks to analyse"
+                        + (f", {len(carried)} unchanged (rating carried forward)" if carried else "")
+                        + f", analysts={', '.join(analysts)}")
+        if not batch["run_ids"]:  # nothing changed: still send the digest
+            self._maybe_finish_batch(bid)
 
     def _sched_log(self, text):
         log.info(text)
