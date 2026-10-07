@@ -51,14 +51,16 @@ DEFAULT_SETTINGS = {
     "analysts": ["market", "social", "news", "fundamentals"],
     "openai_reasoning_effort": "", "anthropic_effort": "", "google_thinking_level": "",
     "temperature": "", "checkpoint_enabled": False,
-    "data_vendors": {**DEFAULT_CONFIG["data_vendors"], "fundamental_data": "screener,yfinance"},
+    "data_vendors": {**DEFAULT_CONFIG["data_vendors"], "fundamental_data": "screener,yfinance",
+                     "news_data": "gnews,yfinance"},
     "watchlist": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "^NSEI", "^BSESN"],
     "schedule": {"enabled": False, "times": ["09:25", "12:20", "15:15"], "weekdays_only": True,
                  "analysts": ["market", "social"], "first_slot_news": True, "intraday_top": 10, "last_fired": {},
                  "weekly_full": {"enabled": False, "day": 5, "time": "10:00"},
                  "nightly_full": {"enabled": True, "time": "18:00"},
                  "portfolio_digest": {"enabled": True, "time": "16:00"},
-                 "change_detection": True,
+                 "change_detection": True, "fundamentals_cache": True,
+                 "nightly_analysts": ["market", "news", "fundamentals"],
                  "change_thresholds": {"move_pct": 3.0, "vol_ratio": 2.0, "max_age_days": 5}},
     "sim_delay": 0.6,
 }
@@ -351,6 +353,19 @@ class Engine:
                     return TradingAgentsGraph(analysts, config=cfg, debug=False)
                 finally:
                     trading_graph.create_llm_client = orig
+        if cfg["llm_provider"] == "anthropic":
+            with self._sim_lock:  # Haiku rejects the `effort` parameter that Sonnet/Opus take
+                orig = trading_graph.create_llm_client
+
+                def wrapped(**k):
+                    if "haiku" in str(k.get("model", "")).lower():
+                        k.pop("effort", None)
+                    return orig(**k)
+                trading_graph.create_llm_client = wrapped
+                try:
+                    return TradingAgentsGraph(analysts, config=cfg, debug=False)
+                finally:
+                    trading_graph.create_llm_client = orig
         return TradingAgentsGraph(analysts, config=cfg, debug=False)
 
     def _execute(self, run: dict):
@@ -385,6 +400,10 @@ class Engine:
                                      f"deep={cfg['deep_think_llm']} · analysts={', '.join(analysts)}"})
             with run_config(cfg):
                 init = graph.create_run_state(run["ticker"], run["date"], asset_type, portfolio)
+                fc = run["overrides"].get("_fund_cache")
+                if fc and "fundamentals" not in analysts:
+                    from . import fundcache
+                    init["fundamentals_report"] = fundcache.as_prefixed(fc)
                 if init.get("instrument_context"):
                     self._emit(run, {"type": "context", "text": init["instrument_context"][:2000]})
                 if init.get("past_context"):
@@ -407,6 +426,13 @@ class Engine:
                 run["report_path"] = str(path)
             except Exception as e:
                 self._emit(run, {"type": "log", "level": "warn", "text": f"Report save failed: {e}"})
+            if "fundamentals" in analysts and final_state.get("fundamentals_report"):
+                try:
+                    from . import fundcache, snapshot
+                    fundcache.put(run["ticker"], final_state["fundamentals_report"],
+                                  snapshot.latest_quarter(run["ticker"]), run["date"])
+                except Exception:
+                    log.exception("fundamentals cache save")
             signal = graph.process_signal(final_state.get("final_trade_decision", ""))
             run.update(status="done", finished=time.time(), signal=signal,
                        decision=final_state.get("final_trade_decision", ""))
@@ -552,7 +578,7 @@ class Engine:
         tickers = [t for t in self.settings.get("watchlist", []) if not t.startswith("^")]
         if not full and sch.get("intraday_top"):
             tickers = tickers[:int(sch["intraday_top"])]  # watchlist is ordered best-first
-        reasons, carried = {}, {}
+        reasons, carried, cached_n = {}, {}, 0
         if slot == "nightly" and sch.get("change_detection", True):
             from . import snapshot
             try:
@@ -566,13 +592,24 @@ class Engine:
                  "reasons": reasons, "carried": carried}
         self.batches[bid] = batch
         for t in tickers:
+            ov = {"analysts": list(analysts)}
+            if slot == "nightly" and "fundamentals" in analysts and sch.get("fundamentals_cache", True):
+                try:
+                    from . import fundcache, snapshot
+                    rec = fundcache.get(t, snapshot.latest_quarter(t))
+                    if rec:  # reuse the stored analysis; skip the Fundamentals analyst
+                        ov = {"analysts": [a for a in analysts if a != "fundamentals"], "_fund_cache": rec}
+                        cached_n += 1
+                except Exception:
+                    log.exception("fundamentals cache lookup")
             try:
-                batch["run_ids"].append(self.submit(t, today, {"analysts": analysts}, batch_id=bid)["id"])
+                batch["run_ids"].append(self.submit(t, today, ov, batch_id=bid)["id"])
             except ValueError as e:
                 log.warning("slot %s: skipped %s (%s)", slot, t, e)
         self._save_batches()
         self._sched_log(f"Scheduled slot {slot}: {len(batch['run_ids'])} stocks to analyse"
                         + (f", {len(carried)} unchanged (rating carried forward)" if carried else "")
+                        + (f", {cached_n} using cached fundamentals" if cached_n else "")
                         + f", analysts={', '.join(analysts)}")
         if not batch["run_ids"]:  # nothing changed: still send the digest
             self._maybe_finish_batch(bid)
@@ -620,7 +657,7 @@ class Engine:
                         fired["nightly"] = today
                         save_settings(self.settings)
                         self._fire_slot("nightly", today, False, sch,
-                                        analysts=["market", "social", "news", "fundamentals"], label="Nightly full analysis")
+                                        analysts=list(sch.get("nightly_analysts") or ["market", "news", "fundamentals"]), label="Nightly full analysis")
                 if sch.get("weekdays_only", True) and now.weekday() >= 5:
                     continue
                 times = sorted(sch["times"] if "times" in sch else ["09:25", "12:20", "15:15"])  # [] = intraday off

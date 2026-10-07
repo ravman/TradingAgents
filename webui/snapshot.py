@@ -54,7 +54,7 @@ def metrics(ticker: str) -> dict:
 def last_analysis(engine, ticker: str) -> dict | None:
     """Latest completed full (4-analyst) run for the ticker, from the run store."""
     runs = [r for r in engine.runs.values() if r["ticker"] == ticker and r["status"] == "done" and r.get("signal")
-            and len(r.get("analysts") or []) == 4]
+            and (len(r.get("analysts") or []) == 4 or {"market", "news"} <= set(r.get("analysts") or []))]
     if not runs:
         return None
     r = max(runs, key=lambda r: r["created"])

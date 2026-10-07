@@ -26,7 +26,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import get_model_options
 
-from . import auth, screener
+from . import auth, gnews, screener
 from . import engine as eng
 from . import market
 
@@ -48,6 +48,7 @@ from contextlib import asynccontextmanager
 async def lifespan(_app):
     global engine
     screener.register()
+    gnews.register()
     hub.loop = asyncio.get_running_loop()
     engine = eng.Engine(hub.broadcast)
     threading.Thread(target=_price_poller, daemon=True, name="prices").start()
@@ -174,7 +175,7 @@ def meta():
             "vendor_options": {"core_stock_apis": ["yfinance", "alpha_vantage", "yfinance,alpha_vantage"],
                                "technical_indicators": ["yfinance", "alpha_vantage"],
                                "fundamental_data": ["yfinance", "alpha_vantage", "sec_edgar,yfinance"],
-                               "news_data": ["yfinance", "alpha_vantage", "yfinance,alpha_vantage"],
+                               "news_data": ["gnews,yfinance", "yfinance", "alpha_vantage", "yfinance,alpha_vantage"],
                                "macro_data": ["fred"], "prediction_markets": ["polymarket"]}}
 
 
