@@ -64,6 +64,7 @@ DEFAULT_SETTINGS = {
                  "nightly_analysts": ["market", "news", "fundamentals"],
                  "change_thresholds": {"move_pct": 3.0, "vol_ratio": 2.0, "max_age_days": 5}},
     "sim_delay": 0.6,
+    "prompt_cache": {"enabled": False, "ttl": "5m"},  # measured net loss: ~89% of tokens written at 1.25x, ~11% read
 }
 
 
@@ -135,7 +136,7 @@ class EventCapture(BaseCallbackHandler):
     def __init__(self, emit: Callable[[dict], None], cancelled: Callable[[], bool]):
         self.emit = emit
         self.cancelled = cancelled
-        self.stats = {"llm_calls": 0, "tool_calls": 0, "tokens_in": 0, "tokens_out": 0}
+        self.stats = {"llm_calls": 0, "tool_calls": 0, "tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0}
         self._llm_t: dict = {}
         self._tool: dict = {}
         self._lock = threading.Lock()
@@ -170,20 +171,25 @@ class EventCapture(BaseCallbackHandler):
 
     def on_llm_end(self, response, *, run_id, **kw):
         t0, node = self._llm_t.pop(run_id, (time.time(), None))
-        tin = tout = 0
+        tin = tout = cread = cwrite = 0
         try:
             gen = response.generations[0][0]
             msg = getattr(gen, "message", None)
             um = getattr(msg, "usage_metadata", None) or {}
             tin, tout = um.get("input_tokens", 0) or 0, um.get("output_tokens", 0) or 0
+            det = um.get("input_token_details") or {}
+            cread = det.get("cache_read", 0) or 0
+            cwrite = (det.get("cache_creation", 0) or 0) + (det.get("ephemeral_5m_input_tokens", 0) or 0) + (det.get("ephemeral_1h_input_tokens", 0) or 0)
         except Exception:
             pass
         with self._lock:
             self.stats["tokens_in"] += tin
             self.stats["tokens_out"] += tout
+            self.stats["cache_read"] += cread
+            self.stats["cache_write"] += cwrite
         self.emit({"type": "llm_end", "node": node, "agent": _agent_for(node),
                    "duration": round(time.time() - t0, 2), "tokens_in": tin, "tokens_out": tout,
-                   "stats": dict(self.stats)})
+                   "cache_read": cread, "cache_write": cwrite, "stats": dict(self.stats)})
 
     def on_llm_error(self, error, *, run_id, **kw):
         t0, node = self._llm_t.pop(run_id, (time.time(), None))
@@ -358,10 +364,24 @@ class Engine:
             with self._sim_lock:  # Haiku rejects the `effort` parameter that Sonnet/Opus take
                 orig = trading_graph.create_llm_client
 
+                pc = self.settings.get("prompt_cache") or {}
+
                 def wrapped(**k):
                     if "haiku" in str(k.get("model", "")).lower():
                         k.pop("effort", None)
-                    return orig(**k)
+                    client = orig(**k)
+                    if pc.get("enabled", True):  # automatic prompt caching: the breakpoint follows the growing conversation
+                        base_get = client.get_llm
+
+                        def get_llm():
+                            llm = base_get()
+                            cc = {"type": "ephemeral"}
+                            if pc.get("ttl") == "1h":
+                                cc["ttl"] = "1h"
+                            llm.model_kwargs = {**(llm.model_kwargs or {}), "cache_control": cc}
+                            return llm
+                        client.get_llm = get_llm
+                    return client
                 trading_graph.create_llm_client = wrapped
                 try:
                     return TradingAgentsGraph(analysts, config=cfg, debug=False)
